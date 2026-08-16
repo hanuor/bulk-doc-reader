@@ -1,34 +1,34 @@
 from fastapi import FastAPI
 
-from app.api.admin import router as admin_router
-from app.api.cart import router as cart_router
-from app.api.checkout import router as checkout_router
+from contextlib import asynccontextmanager
+from app.db.database import Base, engine
+from app.db.database import Base, engine
+from app.api.batches import router as batches_router
+from app.api.documents import router as documents_router
+from app.api.findings import router as findings_router
 
-from app.services.admin_service import AdminService
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    yield
+
 
 app = FastAPI(
-    title="E-Commerce Store",
+    title="Bulk Doc Reader",
     version="1.0.0",
+    lifespan=lifespan
 )
 
 app.include_router(
-    cart_router,
-    prefix="/cart",
-    tags=["Cart"]
+    batches_router,
+    prefix="/batches",
+    tags=["Batches"]
 )
-
-app.include_router(
-    checkout_router,
-    prefix="/checkout",
-    tags=["Checkout"]
-)
-
-app.include_router(
-    admin_router,
-    prefix="/admin",
-    tags=["Admin"]
-)
-
+app.include_router(documents_router, prefix="/documents", tags=["Documents"])
+app.include_router(findings_router, prefix="/findings", tags=["Findings"])
 
 # @app.get("/")
 # async def health():
