@@ -3,6 +3,7 @@ import os
 import shutil
 import tempfile
 import zipfile
+from fastapi import Query
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import (
@@ -14,7 +15,7 @@ from app.db.models import Batch, Document
 from app.workers.tb import process_document
 
 from fastapi import Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.db.database import get_db
 from app.db.models import Batch, Document, Finding
 
@@ -280,6 +281,8 @@ async def get_batch(
 @router.get("/{batch_id}/documents")
 async def get_batch_documents(
     batch_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
     # --------------------------------------------------
@@ -301,11 +304,13 @@ async def get_batch_documents(
     # --------------------------------------------------
     # Get documents
     # --------------------------------------------------
-
+    offset = (page - 1) * page_size
     result = await db.execute(
         select(Document)
         .where(Document.batch_id == batch_id)
         .order_by(Document.id)
+        .offset(offset)
+        .limit(page_size)
     )
 
     documents = result.scalars().all()
