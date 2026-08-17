@@ -22,12 +22,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-app.include_router(
-    batches_router,
-    tags=["Batches"]
-)
-app.include_router(documents_router, tags=["Documents"])
-app.include_router(findings_router, tags=["Findings"])
+app.include_router(batches_router)
+app.include_router(documents_router)
+app.include_router(findings_router)
 
 # @app.get("/")
 # async def health():

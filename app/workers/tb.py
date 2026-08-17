@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.db.database import AsyncSessionLocal as SessionLocal
+from app.db.database import AsyncSessionLocal, SessionLocal
 from app.db.models import Batch, Document, Finding
 from app.workers.celery import celery_app
 
