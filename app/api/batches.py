@@ -25,6 +25,7 @@ router = APIRouter(prefix="/batches", tags=["batches"])
 MAX_DOCUMENTS = 1000
 MAX_DOCUMENT_SIZE = 15 * 1024 * 1024
 
+MAX_TOTAL_UNCOMPRESSED_SIZE = 1 * 1024 * 1024 * 1024
 
 @router.post("")
 async def create_batch(
@@ -81,6 +82,17 @@ async def create_batch(
                     detail=f"ZIP cannot contain more than {MAX_DOCUMENTS} documents",
                 )
 
+
+            total_size = sum(
+                member.file_size
+                for member in members
+            )
+
+            if total_size > MAX_TOTAL_UNCOMPRESSED_SIZE:
+                raise HTTPException(
+                    status_code=400,
+                    detail="ZIP exceeds maximum total uncompressed size",
+                )
             # --------------------------------------------------
             # 4. Validate individual document sizes
             # --------------------------------------------------
