@@ -68,11 +68,66 @@ def random_date():
     ).strftime("%Y-%m-%d")
 
 
+def update_batch_status(db, batch_id):
+    batch = (
+        db.query(Batch)
+        .filter(Batch.id == batch_id)
+        .first()
+    )
+
+    if not batch:
+        return
+
+    documents = (
+        db.query(Document)
+        .filter(Document.batch_id == batch_id)
+        .all()
+    )
+
+    if not documents:
+        return
+
+    total = len(documents)
+
+    completed = sum(
+        1
+        for document in documents
+        if document.status == "COMPLETED"
+    )
+
+    failed = sum(
+        1
+        for document in documents
+        if document.status == "FAILED"
+    )
+
+    processed = completed + failed
+
+    if processed == total:
+
+        if failed > 0:
+            batch.status = "COMPLETED_WITH_ERRORS"
+        else:
+            batch.status = "COMPLETED"
+
+        batch.completed_at = datetime.utcnow()
+
+        db.commit()
+
+
+
 @celery_app.task(
     bind=True,
     autoretry_for=(Exception,),
     retry_backoff=True,
     max_retries=3,
+)
+
+
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=5,
 )
 def process_document(self, document_id: int):
     db: Session = SessionLocal()
@@ -87,11 +142,13 @@ def process_document(self, document_id: int):
         if not document:
             return
 
-        # Prevent accidentally processing an already completed document
+        # Idempotency:
+        # Don't process a document that already succeeded.
         if document.status == "COMPLETED":
             return
 
         document.status = "PROCESSING"
+        document.error_message = None
         db.commit()
 
         batch = (
@@ -122,12 +179,17 @@ def process_document(self, document_id: int):
             db.add(finding)
 
         document.status = "COMPLETED"
-        
         document.processed_at = datetime.utcnow()
 
         db.commit()
 
+        update_batch_status(
+            db,
+            document.batch_id,
+        )
+
     except Exception as exc:
+
         db.rollback()
 
         document = (
@@ -136,10 +198,43 @@ def process_document(self, document_id: int):
             .first()
         )
 
-        if document:
-            document.status = "FAILED"
+        if not document:
+            db.close()
+            raise
+
+        # --------------------------------------------------
+        # Retry if attempts remain
+        # --------------------------------------------------
+
+        if self.request.retries < self.max_retries:
+
+            document.status = "PENDING"
             document.error_message = str(exc)
+
             db.commit()
+
+            db.close()
+
+            raise self.retry(
+                exc=exc,
+                countdown=5 * (2 ** self.request.retries),
+            )
+
+        # --------------------------------------------------
+        # No retries remaining → permanently failed
+        # --------------------------------------------------
+
+        document.status = "FAILED"
+        document.error_message = str(exc)
+
+        batch_id = document.batch_id
+
+        db.commit()
+
+        update_batch_status(
+            db,
+            batch_id,
+        )
 
         raise
 
